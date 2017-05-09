@@ -137,7 +137,15 @@ func (ros *Ros) GetServices() []string {
 	return services
 }
 
+func (ros *Ros) GetParams() []string {
+        response := ros.getServiceResponse(newServiceCall("/rosapi/get_param_names"))
+        var params []string
+        json.Unmarshal(response.Values["names"], &params)
+        return params
+}
+
 func (ros *Ros) Subscribe(topicName string, callback TopicCallback) {
+	//deprecation recommend
 	//topicResponse := ros.getTopicResponse(topic)
 	topic := NewTopic(topicName)
 
@@ -156,3 +164,43 @@ func (ros *Ros) Subscribe(topicName string, callback TopicCallback) {
 		}
 	}()
 }
+
+func (ros *Ros) SubscribeTopic(topic *Topic, callback TopicCallback) {
+	topic.Op = "subscribe"
+	SetNewTopicId(topic)
+	log.Println("DBG: Topic Id:" + topic.Id)
+	response := make(chan interface{})
+	ros.receivedMapMutex.Lock()
+	ros.receivedMap[topic.Topic] = response
+	ros.receivedMapMutex.Unlock()
+	err := websocket.JSON.Send(ros.ws, *topic)
+	if err != nil {
+		fmt.Println("Couldn't send msg")
+	}
+
+	go func() {
+		for {
+			callback(&(<-response).(*Topic).Msg)
+		}
+	}()
+}
+
+func (ros *Ros) OutboundTopic(topic *Topic) {
+	SetNewTopicId(topic)
+	log.Println("DBG: Topic Id:" + topic.Id)
+	err := websocket.JSON.Send(ros.ws, *topic)
+	if err != nil {
+		fmt.Println("Couldn't send msg")
+	}
+}
+
+func (ros *Ros) AdvertiseTopic(topic *Topic) {
+	topic.Op = "advertise"
+	ros.OutboundTopic(topic)
+}
+
+func (ros *Ros) PublishTopic(topic *Topic) {
+	topic.Op = "publish"
+	ros.OutboundTopic(topic)
+}
+

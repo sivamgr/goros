@@ -145,15 +145,21 @@ func (ros *Ros) GetParams() []string {
 }
 
 func (ros *Ros) Subscribe(topicName string, callback TopicCallback) {
-	//deprecation recommend
 	//topicResponse := ros.getTopicResponse(topic)
 	topic := NewTopic(topicName)
+	ros.SubscribeTopic(topic, callback)
+}
 
+func (ros *Ros) SubscribeTopic(topic *Topic, callback TopicCallback) {
+	topic.Op = "subscribe"
+	SetNewTopicId(topic)
+	//log.Printf("DBG: topic : %v" , topic)
+	//log.Printf("DBG: ros   : %v" , ros)
 	response := make(chan interface{})
 	ros.receivedMapMutex.Lock()
 	ros.receivedMap[topic.Topic] = response
 	ros.receivedMapMutex.Unlock()
-	err := websocket.JSON.Send(ros.ws, topic)
+	err := websocket.JSON.Send(ros.ws, *topic)
 	if err != nil {
 		fmt.Println("Couldn't send msg")
 	}
@@ -165,7 +171,7 @@ func (ros *Ros) Subscribe(topicName string, callback TopicCallback) {
 	}()
 }
 
-func (ros *Ros) SubscribeTopic(topic *Topic, response *chan interface{}, callback TopicCallback) {
+func (ros *Ros) SubscribeTopicWithChannel(topic *Topic, response *chan interface{}) {
 	topic.Op = "subscribe"
 	SetNewTopicId(topic)
 	log.Printf("DBG: topic : %v" , topic)
@@ -178,12 +184,6 @@ func (ros *Ros) SubscribeTopic(topic *Topic, response *chan interface{}, callbac
 	if err != nil {
 		fmt.Println("Couldn't send msg")
 	}
-
-	go func() {
-		for {
-			callback(&(<-*response).(*Topic).Msg)
-		}
-	}()
 }
 
 func (ros *Ros) OutboundTopic(topic *Topic) {
@@ -206,18 +206,4 @@ func (ros *Ros) PublishTopic(topic *Topic) {
 	ros.OutboundTopic(topic)
 }
 
-func (ros *Ros) SubscribeTopicWithChannel(topic *Topic, response *chan interface{}) {
-	topic.Op = "subscribe"
-	SetNewTopicId(topic)
-	log.Printf("DBG: topic : %v" , topic)
-	log.Printf("DBG: ros   : %v" , ros)
-	//response := make(chan interface{})
-	ros.receivedMapMutex.Lock()
-	ros.receivedMap[topic.Topic] = *response
-	ros.receivedMapMutex.Unlock()
-	err := websocket.JSON.Send(ros.ws, *topic)
-	if err != nil {
-		fmt.Println("Couldn't send msg")
-	}
-}
 

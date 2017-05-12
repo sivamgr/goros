@@ -25,23 +25,30 @@ type Ros struct {
 	ws               *websocket.Conn
 	receivedMapMutex sync.Mutex
 	receivedMap      map[string]chan interface{}
+	IsConnected      bool // exported
+	IsSubscribed     bool // exported
 }
 
-func NewRos(url string) *Ros {
+func NewRos(url string) (*Ros, error) {
 	ros := Ros{url: url, origin: "https://localhost"}
 	ros.receivedMap = make(map[string]chan interface{})
-	ros.connect()
+	err := ros.connect()
+	if err != nil {
+		return nil, fmt.Errorf("goros.NewRos: %v", err)
+	}
 	go ros.handleIncoming()
-	return &ros
+	return &ros, nil
 }
 
-func (ros *Ros) connect() {
+func (ros *Ros) connect() error {
 	ws, err := websocket.Dial(ros.url, "", ros.origin)
 	if err != nil {
-		log.Fatal(err)
+		//log.Fatal(err)
+		return fmt.Errorf("goros.connect: %v", err)
 	}
-
+	ros.IsConnected = true
 	ros.ws = ws
+	return nil
 }
 
 func (ros *Ros) getServiceResponse(service *ServiceCall) *ServiceResponse {
@@ -150,29 +157,34 @@ func (ros *Ros) Subscribe(topicName string, callback TopicCallback) {
 	ros.SubscribeTopic(topic, callback)
 }
 
-func (ros *Ros) SubscribeTopic(topic *Topic, callback TopicCallback) {
-	topic.Op = "subscribe"
-	SetNewTopicId(topic)
-	//log.Printf("DBG: topic : %v" , topic)
-	//log.Printf("DBG: ros   : %v" , ros)
+func (ros *Ros) SubscribeTopic(topic *Topic, callback TopicCallback) error {
 	response := make(chan interface{})
-	ros.receivedMapMutex.Lock()
-	ros.receivedMap[topic.Topic] = response
-	ros.receivedMapMutex.Unlock()
-	err := websocket.JSON.Send(ros.ws, *topic)
-	if err != nil {
-		fmt.Println("Couldn't send msg")
-	}
+	err := ros.SubscribeTopicWithChannel(topic, &response)
 
+	if err != nil {
+		return fmt.Errorf("goros.SubscribeTopic: %v", err)
+	}
 	go func() {
 		for {
 			callback(&(<-response).(*Topic).Msg)
 		}
 	}()
+	return nil
 }
 
-func (ros *Ros) SubscribeTopicWithChannel(topic *Topic, response *chan interface{}) {
+func (ros *Ros) SubscribeTopicWithChannel(topic *Topic, response *chan interface{}) error {
 	topic.Op = "subscribe"
+	tmptopics := ros.GetTopics()
+	ok := false
+	for _, tmptopic := range tmptopics {
+		if topic.Topic == tmptopic {
+			ok = true
+			break
+		}
+	}
+	if ok == false {
+		return fmt.Errorf("goros.SubscribeTopicWithChannel: Could not find topic: %s", topic.Topic)
+	}
 	SetNewTopicId(topic)
 	log.Printf("DBG: topic : %v" , topic)
 	log.Printf("DBG: ros   : %v" , ros)
@@ -184,6 +196,8 @@ func (ros *Ros) SubscribeTopicWithChannel(topic *Topic, response *chan interface
 	if err != nil {
 		fmt.Println("Couldn't send msg")
 	}
+	ros.IsSubscribed = true
+	return nil
 }
 
 func (ros *Ros) OutboundTopic(topic *Topic) {

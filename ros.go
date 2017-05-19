@@ -3,7 +3,7 @@ package goros
 import (
 	"encoding/json"
 	"fmt"
-	"io"
+	//"io"
 	"log"
 	"sync"
 
@@ -29,6 +29,11 @@ type Ros struct {
 	IsSubscribed     bool // exported
 }
 
+type RosParamArg struct {
+	Name string `json:"name"`
+	Value json.RawMessage `json:"value,omitempty"`
+}
+
 func NewRos(url string) (*Ros, error) {
 	ros := Ros{url: url}
 	ros.receivedMap = make(map[string]chan interface{})
@@ -50,18 +55,19 @@ func (ros *Ros) connect() error {
 	return nil
 }
 
-func (ros *Ros) getServiceResponse(service *ServiceCall) *ServiceResponse {
+func (ros *Ros) getServiceResponse(service *ServiceCall) (*ServiceResponse, error) {
 	response := make(chan interface{})
 	ros.receivedMapMutex.Lock()
 	ros.receivedMap[service.Id] = response
 	ros.receivedMapMutex.Unlock()
 	err := ros.Ws.WriteJSON(service)
 	if err != nil {
-		fmt.Println("Couldn't send msg")
+		//fmt.Println("Couldn't send msg")
+		fmt.Errorf("goros.getServiceResponse: Couldn't send msg: %v", err)
 	}
 
 	serviceResponse := <-response
-	return serviceResponse.(*ServiceResponse)
+	return serviceResponse.(*ServiceResponse), err
 }
 
 func (ros *Ros) getTopicResponse(topic *Topic) *interface{} {
@@ -90,11 +96,15 @@ func (ros *Ros) handleIncoming() {
 		_, msg, err := ros.Ws.ReadMessage()
 		if err != nil {
 			//log.Printf("DBG: goros.handleIncoming: ros before: %v" , ros)
+			//log.Printf("DBG: goros.handleIncoming: err: %v" , err)
 			ros.Ws = nil
 			ros.IsSubscribed = false
+			/*
 			if err == io.EOF {
+				log.Println("goros.handleIncoming: Couldn't receive msg.  " + err.Error())
 				break
 			}
+			*/
 			//log.Println("goros.handleIncoming: Couldn't receive msg. Socket disconnected. " + err.Error())
 			//log.Printf("DBG: goros.handleIncoming: ros after : %v" , ros)
 			break
@@ -114,7 +124,7 @@ func (ros *Ros) handleIncoming() {
 		json.Unmarshal(msg, &base)
 
 		//log.Println(base)
-		log.Printf("goros.handleIncoming: %v",  base)
+		log.Printf("goros.handleIncoming: Info: %v",  base)
 
 		if base.Op == "service_response" {
 			var serviceResponse ServiceResponse
@@ -133,25 +143,58 @@ func (ros *Ros) handleIncoming() {
 	}
 }
 
-func (ros *Ros) GetTopics() []string {
-	response := ros.getServiceResponse(newServiceCall("/rosapi/topics"))
+func (ros *Ros) GetTopics() ([]string, error) {
+	response, err := ros.getServiceResponse(newServiceCall("/rosapi/topics"))
+	if err != nil {
+		err = fmt.Errorf("goros.GetTopics: %v", err)
+	}
 	var topics []string
 	json.Unmarshal(response.Values["topics"], &topics)
-	return topics
+	return topics, err
 }
 
-func (ros *Ros) GetServices() []string {
-	response := ros.getServiceResponse(newServiceCall("/rosapi/services"))
+func (ros *Ros) GetServices() ([]string , error){
+	response, err := ros.getServiceResponse(newServiceCall("/rosapi/services"))
+	if err != nil {
+		err = fmt.Errorf("goros.GetServices: %v", err)
+	}
 	var services []string
 	json.Unmarshal(response.Values["services"], &services)
-	return services
+	return services, err
 }
 
-func (ros *Ros) GetParams() []string {
-        response := ros.getServiceResponse(newServiceCall("/rosapi/get_param_names"))
+func (ros *Ros) GetParams() ([]string, error) {
+        response, err := ros.getServiceResponse(newServiceCall("/rosapi/get_param_names"))
+	if err != nil {
+		err = fmt.Errorf("goros.GetParams: %v", err)
+	}
         var params []string
         json.Unmarshal(response.Values["names"], &params)
-        return params
+        return params, err
+}
+
+func (ros *Ros) GetParam(paramName string) (string, error) {
+	arg, err := json.Marshal(RosParamArg{Name: paramName})
+	if err != nil {
+		return "", fmt.Errorf("goros.GetParam: %v", err)
+	}
+	var response *ServiceResponse
+	serviceCall := newServiceCall("/rosapi/get_param")
+	serviceCall.Args = arg
+	//serviceCall.Args = (json.RawMessage)(`{"name":"` + paramName + `"}`)
+        response, err = ros.getServiceResponse(serviceCall)
+	if err != nil {
+		return "", fmt.Errorf("goros.GetParam: %v", err)
+	}
+	//log.Printf("DBG: goros.GetParam: response v : %v" , *response)
+	//log.Printf("DBG: goros.GetParam: response s : %s" , *response)
+        var param string
+	if response.Result == false {
+		return "", fmt.Errorf("goros.GetParam: response result is false.")
+	}
+        json.Unmarshal(response.Values["value"], &param)
+	//log.Printf("DBG: goros.GetParam: param : %s" , param)
+        return param, err
 }
 
 func (ros *Ros) Subscribe(topicName string, callback TopicCallback) {
@@ -180,7 +223,10 @@ func (ros *Ros) SubscribeTopic(topic *Topic, callback TopicCallback) error {
 
 func (ros *Ros) SubscribeTopicWithChannel(topic *Topic, response *chan interface{}) error {
 	topic.Op = "subscribe"
-	tmptopics := ros.GetTopics()
+	tmptopics, err := ros.GetTopics()
+	if err != nil {
+		return fmt.Errorf("goros.SubscribeTopicWithChannel: %v", err)
+	}
 	ok := false
 	for _, tmptopic := range tmptopics {
 		if topic.Topic == tmptopic {
@@ -192,12 +238,12 @@ func (ros *Ros) SubscribeTopicWithChannel(topic *Topic, response *chan interface
 		return fmt.Errorf("goros.SubscribeTopicWithChannel: Could not find topic: %s", topic.Topic)
 	}
 	SetNewTopicId(topic)
-	log.Printf("DBG: goros.SubscribeTopicWithChannel: topic : %v" , *topic)
-	log.Printf("DBG: goros.SubscribeTopicWithChannel: ros   : %v" , *ros)
+	//log.Printf("DBG: goros.SubscribeTopicWithChannel: topic : %v" , *topic)
+	//log.Printf("DBG: goros.SubscribeTopicWithChannel: ros   : %v" , *ros)
 	ros.receivedMapMutex.Lock()
 	ros.receivedMap[topic.Topic] = *response
 	ros.receivedMapMutex.Unlock()
-	err := ros.Ws.WriteJSON(topic)
+	err = ros.Ws.WriteJSON(topic)
 	if err != nil {
 		return fmt.Errorf("goros.SubscribeTopicWithChannel: %v", err)
 	}
@@ -207,8 +253,8 @@ func (ros *Ros) SubscribeTopicWithChannel(topic *Topic, response *chan interface
 
 func (ros *Ros) OutboundTopic(topic *Topic) error {
 	SetNewTopicId(topic)
-	log.Printf("DBG: goros.OutboundTopic: topic : %v" , *topic)
-	log.Printf("DBG: goros.OutboundTopic: ros   : %v" , *ros)
+	//log.Printf("DBG: goros.OutboundTopic: topic : %v" , *topic)
+	//log.Printf("DBG: goros.OutboundTopic: ros   : %v" , *ros)
 	err := ros.Ws.WriteJSON(topic)
 	if err != nil {
 		return fmt.Errorf("goros.OutboundTopic: %v", err)

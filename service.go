@@ -9,7 +9,8 @@ type ServiceCall struct {
 	Op      string `json:"op"`
 	Id      string `json:"id"`
 	Service string `json:"service"`
-	Args    string `json:"args,omitempty"`
+	//Args    string `json:"args,omitempty"`
+	Args    json.RawMessage `json:"args,omitempty"`
 }
 
 func newServiceCall(service string) *ServiceCall {

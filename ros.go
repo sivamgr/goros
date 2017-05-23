@@ -26,7 +26,6 @@ type Ros struct {
 	Ws               *websocket.Conn //exported
 	receivedMapMutex sync.Mutex
 	receivedMap      map[string]chan interface{}
-	IsSubscribed     bool // exported
 }
 
 type RosParamArg struct {
@@ -97,8 +96,9 @@ func (ros *Ros) handleIncoming() {
 		if err != nil {
 			//log.Printf("DBG: goros.handleIncoming: ros before: %v" , ros)
 			//log.Printf("DBG: goros.handleIncoming: err: %v" , err)
+			//err := ros.Ws.Close()
+			//log.Printf("DBG: goros.handleIncoming: disconnect and close: ros.Ws: %v, err: %v", ros.Ws , err)
 			ros.Ws = nil
-			ros.IsSubscribed = false
 			/*
 			if err == io.EOF {
 				log.Println("goros.handleIncoming: Couldn't receive msg.  " + err.Error())
@@ -247,7 +247,6 @@ func (ros *Ros) SubscribeTopicWithChannel(topic *Topic, response *chan interface
 	if err != nil {
 		return fmt.Errorf("goros.SubscribeTopicWithChannel: %v", err)
 	}
-	ros.IsSubscribed = true
 	return nil
 }
 

@@ -28,9 +28,13 @@ type Ros struct {
 	receivedMap      map[string]chan interface{}
 }
 
-type RosParamArg struct {
+type GetParamArg struct {
 	Name string `json:"name"`
 	Value json.RawMessage `json:"value,omitempty"`
+}
+
+type PublishersArg struct {
+	Topic string `json:"topic"`
 }
 
 func NewRos(url string) (*Ros, error) {
@@ -153,6 +157,30 @@ func (ros *Ros) GetTopics() ([]string, error) {
 	return topics, err
 }
 
+func (ros *Ros) GetPublishers(topicName string) ([]string, error) {
+        var publishers []string
+	arg, err := json.Marshal(PublishersArg{Topic: topicName})
+	if err != nil {
+		return publishers, fmt.Errorf("goros.GetPublishers: %v", err)
+	}
+	var response *ServiceResponse
+	serviceCall := newServiceCall("/rosapi/publishers")
+	serviceCall.Args = arg
+	//serviceCall.Args = (json.RawMessage)(`{"name":"` + topicName + `"}`)
+        response, err = ros.getServiceResponse(serviceCall)
+	if err != nil {
+		return publishers, fmt.Errorf("goros.GetPublishers: %v", err)
+	}
+	//log.Printf("DBG: goros.GetPublishers: response v : %v" , *response)
+	//log.Printf("DBG: goros.GetPublishers: response s : %s" , *response)
+	if response.Result == false {
+		return publishers, fmt.Errorf("goros.GetParam: response result is false.")
+	}
+        json.Unmarshal(response.Values["publishers"], &publishers)
+	//log.Printf("DBG: goros.GetPublishers: param : %s" , publishers)
+        return publishers, err
+}
+
 func (ros *Ros) GetServices() ([]string , error){
 	response, err := ros.getServiceResponse(newServiceCall("/rosapi/services"))
 	if err != nil {
@@ -174,7 +202,7 @@ func (ros *Ros) GetParams() ([]string, error) {
 }
 
 func (ros *Ros) GetParam(paramName string) (string, error) {
-	arg, err := json.Marshal(RosParamArg{Name: paramName})
+	arg, err := json.Marshal(GetParamArg{Name: paramName})
 	if err != nil {
 		return "", fmt.Errorf("goros.GetParam: %v", err)
 	}
@@ -223,18 +251,11 @@ func (ros *Ros) SubscribeTopic(topic *Topic, callback TopicCallback) error {
 
 func (ros *Ros) SubscribeTopicWithChannel(topic *Topic, response *chan interface{}) error {
 	topic.Op = "subscribe"
-	tmptopics, err := ros.GetTopics()
+	tmpPublishers, err := ros.GetPublishers(topic.Topic)
 	if err != nil {
 		return fmt.Errorf("goros.SubscribeTopicWithChannel: %v", err)
 	}
-	ok := false
-	for _, tmptopic := range tmptopics {
-		if topic.Topic == tmptopic {
-			ok = true
-			break
-		}
-	}
-	if ok == false {
+	if len(tmpPublishers) == 0 {
 		return fmt.Errorf("goros.SubscribeTopicWithChannel: Could not find topic: %s", topic.Topic)
 	}
 	SetNewTopicId(topic)

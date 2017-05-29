@@ -28,12 +28,17 @@ type Ros struct {
 	receivedMap      map[string]chan interface{}
 }
 
-type GetParamArg struct {
-	Name string `json:"name"`
-	Value json.RawMessage `json:"value,omitempty"`
+type ArgGetParam struct {
+	Name    string `json:"name"`
+	Default string `json:"default,omitempty"`
 }
 
-type PublishersArg struct {
+type ArgSetParam struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+type ArgPublishers struct {
 	Topic string `json:"topic"`
 }
 
@@ -159,7 +164,7 @@ func (ros *Ros) GetTopics() ([]string, error) {
 
 func (ros *Ros) GetPublishers(topicName string) ([]string, error) {
         var publishers []string
-	arg, err := json.Marshal(PublishersArg{Topic: topicName})
+	arg, err := json.Marshal(ArgPublishers{Topic: topicName})
 	if err != nil {
 		return publishers, fmt.Errorf("goros.GetPublishers: %v", err)
 	}
@@ -202,7 +207,7 @@ func (ros *Ros) GetParams() ([]string, error) {
 }
 
 func (ros *Ros) GetParam(paramName string) (string, error) {
-	arg, err := json.Marshal(GetParamArg{Name: paramName})
+	arg, err := json.Marshal(ArgGetParam{Name: paramName})
 	if err != nil {
 		return "", fmt.Errorf("goros.GetParam: %v", err)
 	}
@@ -223,6 +228,28 @@ func (ros *Ros) GetParam(paramName string) (string, error) {
         json.Unmarshal(response.Values["value"], &param)
 	//log.Printf("DBG: goros.GetParam: param : %s" , param)
         return param, err
+}
+
+func (ros *Ros) SetParam(paramName string, value string) error {
+	arg, err := json.Marshal(ArgSetParam{Name: paramName, Value: value})
+	if err != nil {
+		return fmt.Errorf("goros.SetParam: %v", err)
+	}
+	var response *ServiceResponse
+	serviceCall := newServiceCall("/rosapi/set_param")
+	serviceCall.Args = arg
+	//serviceCall.Args = (json.RawMessage)(`{"name":"` + paramName + `"}`)
+        response, err = ros.getServiceResponse(serviceCall)
+	if err != nil {
+		return fmt.Errorf("goros.SetParam: %v", err)
+	}
+	//log.Printf("DBG: goros.SetParam: response v : %v" , *response)
+	//log.Printf("DBG: goros.SetParam: response s : %s" , *response)
+	if response.Result == false {
+		return fmt.Errorf("goros.SetParam: response result is false.")
+	}
+	//log.Printf("DBG: goros.SetParam: param : %s" , param)
+        return err
 }
 
 func (ros *Ros) Subscribe(topicName string, callback TopicCallback) {

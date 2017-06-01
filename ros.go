@@ -133,7 +133,7 @@ func (ros *Ros) handleIncoming() {
 		json.Unmarshal(msg, &base)
 
 		//log.Println(base)
-		log.Printf("goros.handleIncoming: Info: %v",  base)
+		//log.Printf("goros.handleIncoming: Info: %v",  base)
 
 		if base.Op == "service_response" {
 			var serviceResponse ServiceResponse

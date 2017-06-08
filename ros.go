@@ -9,6 +9,11 @@ import (
 
 	//"golang.org/x/net/websocket"
 	"github.com/gorilla/websocket"
+	"time"
+)
+
+const (
+	TimeoutInSec = 5
 )
 
 var (
@@ -68,13 +73,19 @@ func (ros *Ros) getServiceResponse(service *ServiceCall) (*ServiceResponse, erro
 	ros.receivedMapMutex.Lock()
 	ros.receivedMap[service.Id] = response
 	ros.receivedMapMutex.Unlock()
+	var serviceResponse interface{}
 	err := ros.Ws.WriteJSON(service)
 	if err != nil {
 		//fmt.Println("Couldn't send msg")
-		fmt.Errorf("goros.getServiceResponse: Couldn't send msg: %v", err)
+		return nil, fmt.Errorf("goros.getServiceResponse: Couldn't send msg: %v", err)
 	}
 
-	serviceResponse := <-response
+	select {
+	case serviceResponse = <-response:
+		break
+	case <-time.After(TimeoutInSec * time.Second):
+		return nil, fmt.Errorf("goros.getServiceResponse: Timeout %d sec., no response.", TimeoutInSec)
+	}
 	return serviceResponse.(*ServiceResponse), err
 }
 
@@ -278,6 +289,14 @@ func (ros *Ros) SubscribeTopic(topic *Topic, callback TopicCallback) error {
 
 func (ros *Ros) SubscribeTopicWithChannel(topic *Topic, response *chan interface{}) error {
 	topic.Op = "subscribe"
+	if topic.Throttle_rate < 0 {
+		log.Printf("goros.SubscribeTopicWithChannel: Warn: throttle_rate(%d) is not allowed, Set to 0", topic.Throttle_rate)
+		topic.Throttle_rate = 0
+	}
+	if topic.Queue_length < 1 {
+		log.Printf("goros.SubscribeTopicWithChannel: Warn: queue_length(%d) is not allowed, Set to 1", topic.Queue_length)
+		topic.Queue_length = 1
+	}
 	tmpPublishers, err := ros.GetPublishers(topic.Topic)
 	if err != nil {
 		return fmt.Errorf("goros.SubscribeTopicWithChannel: %v", err)
@@ -323,6 +342,15 @@ func (ros *Ros) PublishTopic(topic *Topic) error {
 	err := ros.OutboundTopic(topic)
 	if err != nil {
 		return fmt.Errorf("goros.PublishTopic: %v", err)
+	}
+	return nil
+}
+
+func (ros *Ros) UnsubscribeTopic(topic *Topic) error {
+	topic.Op = "unsubscribe"
+	err := ros.OutboundTopic(topic)
+	if err != nil {
+		return fmt.Errorf("goros.UnsubscribeTopic: %v", err)
 	}
 	return nil
 }

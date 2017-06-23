@@ -27,10 +27,11 @@ type Base struct {
 
 type Ros struct {
 	//origin           string
-	url              string
+	Url              string
 	Ws               *websocket.Conn //exported
 	receivedMapMutex sync.Mutex
 	receivedMap      map[string]chan interface{}
+	WsWriteMutex     sync.Mutex
 }
 
 type ArgGetParam struct {
@@ -48,7 +49,7 @@ type ArgPublishers struct {
 }
 
 func NewRos(url string) (*Ros, error) {
-	ros := Ros{url: url}
+	ros := Ros{Url: url}
 	ros.receivedMap = make(map[string]chan interface{})
 	err := ros.connect()
 	if err != nil {
@@ -60,7 +61,7 @@ func NewRos(url string) (*Ros, error) {
 
 func (ros *Ros) connect() error {
 	dialer := websocket.Dialer{}
-	ws, _, err := dialer.Dial(ros.url, nil)
+	ws, _, err := dialer.Dial(ros.Url, nil)
 	if err != nil {
 		return fmt.Errorf("goros.connect: %v", err)
 	}
@@ -74,7 +75,9 @@ func (ros *Ros) getServiceResponse(service *ServiceCall) (*ServiceResponse, erro
 	ros.receivedMap[service.Id] = response
 	ros.receivedMapMutex.Unlock()
 	var serviceResponse interface{}
+	ros.WsWriteMutex.Lock()
 	err := ros.Ws.WriteJSON(service)
+	ros.WsWriteMutex.Unlock()
 	if err != nil {
 		//fmt.Println("Couldn't send msg")
 		return nil, fmt.Errorf("goros.getServiceResponse: Couldn't send msg: %v", err)
@@ -94,7 +97,9 @@ func (ros *Ros) getTopicResponse(topic *Topic) *interface{} {
 	ros.receivedMapMutex.Lock()
 	ros.receivedMap[topic.Id] = response
 	ros.receivedMapMutex.Unlock()
+	ros.WsWriteMutex.Lock()
 	err := ros.Ws.WriteJSON(topic)
+	ros.WsWriteMutex.Unlock()
 	if err != nil {
 		fmt.Println("Couldn't send msg")
 	}
@@ -310,7 +315,9 @@ func (ros *Ros) SubscribeTopicWithChannel(topic *Topic, response *chan interface
 	ros.receivedMapMutex.Lock()
 	ros.receivedMap[topic.Topic] = *response
 	ros.receivedMapMutex.Unlock()
+	ros.WsWriteMutex.Lock()
 	err = ros.Ws.WriteJSON(topic)
+	ros.WsWriteMutex.Unlock()
 	if err != nil {
 		return fmt.Errorf("goros.SubscribeTopicWithChannel: %v", err)
 	}
@@ -321,7 +328,9 @@ func (ros *Ros) OutboundTopic(topic *Topic) error {
 	SetNewTopicId(topic)
 	//log.Printf("DBG: goros.OutboundTopic: topic : %v" , *topic)
 	//log.Printf("DBG: goros.OutboundTopic: ros   : %v" , *ros)
+	ros.WsWriteMutex.Lock()
 	err := ros.Ws.WriteJSON(topic)
+	ros.WsWriteMutex.Unlock()
 	if err != nil {
 		return fmt.Errorf("goros.OutboundTopic: %v", err)
 	}

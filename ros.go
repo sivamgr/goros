@@ -70,6 +70,9 @@ func (ros *Ros) connect() error {
 }
 
 func (ros *Ros) getServiceResponse(service *ServiceCall) (*ServiceResponse, error) {
+	if ros.Ws == nil {
+		return nil, fmt.Errorf("goros.getServiceResponse: No Websocket Connection.")
+	}
 	response := make(chan interface{})
 	ros.receivedMapMutex.Lock()
 	ros.receivedMap[service.Id] = response
@@ -93,6 +96,10 @@ func (ros *Ros) getServiceResponse(service *ServiceCall) (*ServiceResponse, erro
 }
 
 func (ros *Ros) getTopicResponse(topic *Topic) *interface{} {
+	if ros.Ws == nil {
+		fmt.Printf("goros.getTopicResponse: No Websocket Connection.")
+		return nil
+	}
 	response := make(chan interface{})
 	ros.receivedMapMutex.Lock()
 	ros.receivedMap[topic.Id] = response
@@ -293,6 +300,9 @@ func (ros *Ros) SubscribeTopic(topic *Topic, callback TopicCallback) error {
 }
 
 func (ros *Ros) SubscribeTopicWithChannel(topic *Topic, response *chan interface{}) error {
+	if ros.Ws == nil {
+		return fmt.Errorf("goros.SubscribeTopicWithChannel: No Websocket Connection.")
+	}
 	topic.Op = "subscribe"
 	if topic.Throttle_rate < 0 {
 		log.Printf("goros.SubscribeTopicWithChannel: Warn: throttle_rate(%d) is not allowed, Set to 0", topic.Throttle_rate)
@@ -325,6 +335,9 @@ func (ros *Ros) SubscribeTopicWithChannel(topic *Topic, response *chan interface
 }
 
 func (ros *Ros) OutboundTopic(topic *Topic) error {
+	if ros.Ws == nil {
+		return fmt.Errorf("goros.OutboundTopic: No Websocket Connection.")
+	}
 	SetNewTopicId(topic)
 	//log.Printf("DBG: goros.OutboundTopic: topic : %v" , *topic)
 	//log.Printf("DBG: goros.OutboundTopic: ros   : %v" , *ros)

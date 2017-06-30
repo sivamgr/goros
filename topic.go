@@ -13,6 +13,7 @@ type Topic struct {
 	Throttle_rate int   `json:"throttle_rate,omitempty"` //In msec
 	Queue_length  int   `json:"queue_length,omitempty"`  //Default: 1
 	Fragment_size int   `json:"fragment_size,omitempty"`
+	Compression  string `json:"compression,omitempty"`
 	Msg json.RawMessage `json:"msg,omitempty"`
 }
 

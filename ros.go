@@ -27,11 +27,19 @@ type Base struct {
 
 type Ros struct {
 	//origin           string
-	Url              string
-	Ws               *websocket.Conn //exported
+	url              string
+	ws               *websocket.Conn
 	receivedMapMutex sync.Mutex
 	receivedMap      map[string]chan interface{}
-	WsWriteMutex     sync.Mutex
+	wsWriteMutex     sync.Mutex
+}
+
+func (ros *Ros)GetUrl() string {
+	return ros.url
+}
+
+func (ros *Ros)GetWs() *websocket.Conn {
+	return ros.ws
 }
 
 type ArgGetParam struct {
@@ -49,7 +57,7 @@ type ArgPublishers struct {
 }
 
 func NewRos(url string) (*Ros, error) {
-	ros := Ros{Url: url}
+	ros := Ros{url: url}
 	ros.receivedMap = make(map[string]chan interface{})
 	err := ros.connect()
 	if err != nil {
@@ -61,16 +69,16 @@ func NewRos(url string) (*Ros, error) {
 
 func (ros *Ros) connect() error {
 	dialer := websocket.Dialer{}
-	ws, _, err := dialer.Dial(ros.Url, nil)
+	ws, _, err := dialer.Dial(ros.url, nil)
 	if err != nil {
 		return fmt.Errorf("goros.connect: %v", err)
 	}
-	ros.Ws = ws
+	ros.ws = ws
 	return nil
 }
 
 func (ros *Ros) getServiceResponse(service *ServiceCall) (*ServiceResponse, error) {
-	if ros.Ws == nil {
+	if ros.ws == nil {
 		return nil, fmt.Errorf("goros.getServiceResponse: No Websocket Connection.")
 	}
 	response := make(chan interface{})
@@ -78,9 +86,9 @@ func (ros *Ros) getServiceResponse(service *ServiceCall) (*ServiceResponse, erro
 	ros.receivedMap[service.Id] = response
 	ros.receivedMapMutex.Unlock()
 	var serviceResponse interface{}
-	ros.WsWriteMutex.Lock()
-	err := ros.Ws.WriteJSON(service)
-	ros.WsWriteMutex.Unlock()
+	ros.wsWriteMutex.Lock()
+	err := ros.ws.WriteJSON(service)
+	ros.wsWriteMutex.Unlock()
 	if err != nil {
 		//fmt.Println("Couldn't send msg")
 		return nil, fmt.Errorf("goros.getServiceResponse: Couldn't send msg: %v", err)
@@ -96,7 +104,7 @@ func (ros *Ros) getServiceResponse(service *ServiceCall) (*ServiceResponse, erro
 }
 
 func (ros *Ros) getTopicResponse(topic *Topic) *interface{} {
-	if ros.Ws == nil {
+	if ros.ws == nil {
 		fmt.Printf("goros.getTopicResponse: No Websocket Connection.")
 		return nil
 	}
@@ -104,9 +112,9 @@ func (ros *Ros) getTopicResponse(topic *Topic) *interface{} {
 	ros.receivedMapMutex.Lock()
 	ros.receivedMap[topic.Id] = response
 	ros.receivedMapMutex.Unlock()
-	ros.WsWriteMutex.Lock()
-	err := ros.Ws.WriteJSON(topic)
-	ros.WsWriteMutex.Unlock()
+	ros.wsWriteMutex.Lock()
+	err := ros.ws.WriteJSON(topic)
+	ros.wsWriteMutex.Unlock()
 	if err != nil {
 		fmt.Println("Couldn't send msg")
 	}
@@ -124,13 +132,13 @@ func (ros *Ros) returnToAppropriateChannel(id string, data interface{}) {
 
 func (ros *Ros) handleIncoming() {
 	for {
-		_, msg, err := ros.Ws.ReadMessage()
+		_, msg, err := ros.ws.ReadMessage()
 		if err != nil {
 			//log.Printf("DBG: goros.handleIncoming: ros before: %v" , ros)
 			//log.Printf("DBG: goros.handleIncoming: err: %v" , err)
-			//err := ros.Ws.Close()
-			//log.Printf("DBG: goros.handleIncoming: disconnect and close: ros.Ws: %v, err: %v", ros.Ws , err)
-			ros.Ws = nil
+			//err := ros.ws.Close()
+			//log.Printf("DBG: goros.handleIncoming: disconnect and close: ros.ws: %v, err: %v", ros.ws , err)
+			ros.ws = nil
 			/*
 			if err == io.EOF {
 				log.Println("goros.handleIncoming: Couldn't receive msg.  " + err.Error())
@@ -300,7 +308,7 @@ func (ros *Ros) SubscribeTopic(topic *Topic, callback TopicCallback) error {
 }
 
 func (ros *Ros) SubscribeTopicWithChannel(topic *Topic, response *chan interface{}) error {
-	if ros.Ws == nil {
+	if ros.ws == nil {
 		return fmt.Errorf("goros.SubscribeTopicWithChannel: No Websocket Connection.")
 	}
 	topic.Op = "subscribe"
@@ -325,9 +333,9 @@ func (ros *Ros) SubscribeTopicWithChannel(topic *Topic, response *chan interface
 	ros.receivedMapMutex.Lock()
 	ros.receivedMap[topic.Topic] = *response
 	ros.receivedMapMutex.Unlock()
-	ros.WsWriteMutex.Lock()
-	err = ros.Ws.WriteJSON(topic)
-	ros.WsWriteMutex.Unlock()
+	ros.wsWriteMutex.Lock()
+	err = ros.ws.WriteJSON(topic)
+	ros.wsWriteMutex.Unlock()
 	if err != nil {
 		return fmt.Errorf("goros.SubscribeTopicWithChannel: %v", err)
 	}
@@ -335,15 +343,15 @@ func (ros *Ros) SubscribeTopicWithChannel(topic *Topic, response *chan interface
 }
 
 func (ros *Ros) OutboundTopic(topic *Topic) error {
-	if ros.Ws == nil {
+	if ros.ws == nil {
 		return fmt.Errorf("goros.OutboundTopic: No Websocket Connection.")
 	}
 	SetNewTopicId(topic)
 	//log.Printf("DBG: goros.OutboundTopic: topic : %v" , *topic)
 	//log.Printf("DBG: goros.OutboundTopic: ros   : %v" , *ros)
-	ros.WsWriteMutex.Lock()
-	err := ros.Ws.WriteJSON(topic)
-	ros.WsWriteMutex.Unlock()
+	ros.wsWriteMutex.Lock()
+	err := ros.ws.WriteJSON(topic)
+	ros.wsWriteMutex.Unlock()
 	if err != nil {
 		return fmt.Errorf("goros.OutboundTopic: %v", err)
 	}

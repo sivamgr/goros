@@ -283,13 +283,10 @@ func (ros *Ros) SetParam(paramName string, value string) error {
         return err
 }
 
-func (ros *Ros) Subscribe(topicName string, callback TopicCallback) {
+func (ros *Ros) Subscribe(topicName string, callback TopicCallback) error {
 	//topicResponse := ros.getTopicResponse(topic)
 	topic := NewTopic(topicName)
-	err := ros.SubscribeTopic(topic, callback)
-	if err != nil {
-		fmt.Println("Couldn't send msg")
-	}
+	return ros.SubscribeTopic(topic, callback)
 }
 
 func (ros *Ros) SubscribeTopic(topic *Topic, callback TopicCallback) error {
